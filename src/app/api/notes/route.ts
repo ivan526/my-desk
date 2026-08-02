@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function GET(request: NextRequest) {
+  const userId = requireUserId(request);
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit") || "50");
 
   const notes = await prisma.dailyNote.findMany({
+    where: { userId },
     include: { task: true },
     orderBy: { date: "desc" },
     take: limit,
@@ -16,6 +19,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = requireUserId(request);
     const body = await request.json();
     const note = await prisma.dailyNote.create({
       data: {
@@ -23,6 +27,7 @@ export async function POST(request: NextRequest) {
         date: body.date ? new Date(body.date) : new Date(),
         taskId: body.taskId || null,
         mood: body.mood || "",
+        userId,
       },
       include: { task: true },
     });

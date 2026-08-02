@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function GET(request: NextRequest) {
+  const userId = requireUserId(request);
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category");
   const projectId = searchParams.get("projectId");
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { userId };
   if (category) where.category = category;
   if (projectId) where.projectId = projectId;
 
@@ -21,6 +23,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = requireUserId(request);
     const body = await request.json();
     const achievement = await prisma.achievement.create({
       data: {
@@ -33,6 +36,7 @@ export async function POST(request: NextRequest) {
         value: body.value || "",
         category: body.category || "",
         date: body.date ? new Date(body.date) : new Date(),
+        userId,
       },
       include: { task: true, project: true },
     });

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const achievement = await prisma.achievement.findUnique({
-    where: { id: params.id },
+  const userId = requireUserId(request);
+  const achievement = await prisma.achievement.findFirst({
+    where: { id: params.id, userId },
     include: { task: true, project: true },
   });
   if (!achievement) {
@@ -20,6 +22,15 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const userId = requireUserId(request);
+
+    const existing = await prisma.achievement.findFirst({
+      where: { id: params.id, userId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "成果不存在" }, { status: 404 });
+    }
+
     const body = await request.json();
     const data: Record<string, unknown> = {};
     if (body.title !== undefined) data.title = body.title;
@@ -46,15 +57,21 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const achievement = await prisma.achievement.findUnique({
-      where: { id: params.id },
+    const userId = requireUserId(request);
+
+    const achievement = await prisma.achievement.findFirst({
+      where: { id: params.id, userId },
       select: { taskId: true },
     });
-    if (achievement?.taskId) {
+    if (!achievement) {
+      return NextResponse.json({ error: "成果不存在" }, { status: 404 });
+    }
+
+    if (achievement.taskId) {
       await prisma.task.update({
         where: { id: achievement.taskId },
         data: { isConverted: false },

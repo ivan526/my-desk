@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { User } from "@/types";
 
 interface UIState {
   sidebarCollapsed: boolean;
@@ -35,4 +36,36 @@ interface NavState {
 export const useNavStore = create<NavState>((set) => ({
   activePage: "dashboard",
   setActivePage: (page) => set({ activePage: page }),
+}));
+
+interface AuthState {
+  user: User | null;
+  loading: boolean;
+  setUser: (user: User | null) => void;
+  logout: () => Promise<void>;
+  fetchUser: () => Promise<void>;
+}
+
+export const useAuthStore = create<AuthState>((set) => ({
+  user: null,
+  loading: true,
+  setUser: (user) => set({ user, loading: false }),
+  logout: async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    set({ user: null });
+    window.location.href = "/login";
+  },
+  fetchUser: async () => {
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        set({ user: data.data, loading: false });
+      } else {
+        set({ user: null, loading: false });
+      }
+    } catch {
+      set({ user: null, loading: false });
+    }
+  },
 }));

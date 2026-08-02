@@ -6,11 +6,12 @@ import {
   ACHIEVEMENT_CATEGORIES,
 } from "@/lib/utils";
 
-export async function generateWeeklyReport(date: Date = new Date()) {
+export async function generateWeeklyReport(userId: string, date: Date = new Date()) {
   const { start, end } = getWeekRange(date);
 
   const tasks = await prisma.task.findMany({
     where: {
+      userId,
       OR: [
         { completedAt: { gte: start, lte: end } },
         { createdAt: { gte: start, lte: end } },
@@ -24,7 +25,7 @@ export async function generateWeeklyReport(date: Date = new Date()) {
   );
 
   const achievements = await prisma.achievement.findMany({
-    where: { date: { gte: start, lte: end } },
+    where: { userId, date: { gte: start, lte: end } },
     include: { project: true },
   });
 
@@ -57,11 +58,12 @@ export async function generateWeeklyReport(date: Date = new Date()) {
   };
 }
 
-export async function generateMonthlyReport(date: Date = new Date()) {
+export async function generateMonthlyReport(userId: string, date: Date = new Date()) {
   const { start, end } = getMonthRange(date);
 
   const tasks = await prisma.task.findMany({
     where: {
+      userId,
       OR: [
         { completedAt: { gte: start, lte: end } },
         { createdAt: { gte: start, lte: end } },
@@ -75,7 +77,7 @@ export async function generateMonthlyReport(date: Date = new Date()) {
   );
 
   const achievements = await prisma.achievement.findMany({
-    where: { date: { gte: start, lte: end } },
+    where: { userId, date: { gte: start, lte: end } },
     include: { project: true, task: true },
   });
 
@@ -126,15 +128,16 @@ function calculateInvestmentDistribution(tasks: { category: string }[]) {
   }));
 }
 
-export async function generateReviewData(date: Date = new Date()) {
+export async function generateReviewData(userId: string, date: Date = new Date()) {
   const { start, end } = getMonthRange(date);
 
   const achievements = await prisma.achievement.findMany({
-    where: { date: { gte: start, lte: end } },
+    where: { userId, date: { gte: start, lte: end } },
   });
 
   const tasks = await prisma.task.findMany({
     where: {
+      userId,
       OR: [
         { completedAt: { gte: start, lte: end } },
         { createdAt: { gte: start, lte: end } },
@@ -156,10 +159,10 @@ export async function generateReviewData(date: Date = new Date()) {
     const { start: ms, end: me } = getMonthRange(d);
 
     const monthTasks = await prisma.task.count({
-      where: { completedAt: { gte: ms, lte: me } },
+      where: { userId, completedAt: { gte: ms, lte: me } },
     });
     const monthAchievements = await prisma.achievement.count({
-      where: { date: { gte: ms, lte: me } },
+      where: { userId, date: { gte: ms, lte: me } },
     });
 
     last6Months.push({

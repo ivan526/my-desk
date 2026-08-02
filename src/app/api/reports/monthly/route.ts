@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generateMonthlyReport } from "@/lib/aggregation";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function GET(request: NextRequest) {
+  const userId = requireUserId(request);
   const { searchParams } = new URL(request.url);
   const dateStr = searchParams.get("date");
 
   const date = dateStr ? new Date(dateStr) : new Date();
-  const autoData = await generateMonthlyReport(date);
+  const autoData = await generateMonthlyReport(userId, date);
 
   const { start } = { start: autoData.month };
   const endOfMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59);
 
   const existing = await prisma.monthlyReport.findFirst({
-    where: { month: { gte: start, lte: endOfMonth } },
+    where: { userId, month: { gte: start, lte: endOfMonth } },
   });
 
   return NextResponse.json({
@@ -26,6 +28,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = requireUserId(request);
     const body = await request.json();
     const report = await prisma.monthlyReport.upsert({
       where: { id: body.id || "nonexistent" },
@@ -37,6 +40,7 @@ export async function POST(request: NextRequest) {
         collaborationsCount: body.collaborationsCount || 0,
         summary: body.summary || "",
         isAuto: false,
+        userId,
       },
       update: {
         summary: body.summary,

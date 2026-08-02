@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const task = await prisma.task.findUnique({
-    where: { id: params.id },
+  const userId = requireUserId(request);
+  const task = await prisma.task.findFirst({
+    where: { id: params.id, userId },
     include: { project: true, achievement: true, notes: true },
   });
 
@@ -21,13 +23,23 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const userId = requireUserId(request);
     const body = await request.json();
+
+    // Verify ownership
+    const existing = await prisma.task.findFirst({
+      where: { id: params.id, userId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "任务不存在" }, { status: 404 });
+    }
+
     const data: Record<string, unknown> = {};
     if (body.title !== undefined) data.title = body.title;
     if (body.description !== undefined) data.description = body.description;
     if (body.status !== undefined) {
       data.status = body.status;
-      if (body.status === "done" && !body.completedAt) {
+      if (body.status === "done" && !existing.completedAt) {
         data.completedAt = new Date();
       }
     }
@@ -56,10 +68,19 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const userId = requireUserId(request);
+
+    const existing = await prisma.task.findFirst({
+      where: { id: params.id, userId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "任务不存在" }, { status: 404 });
+    }
+
     await prisma.task.delete({ where: { id: params.id } });
     return NextResponse.json({ data: { success: true } });
   } catch (error) {

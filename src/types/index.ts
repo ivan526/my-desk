@@ -138,3 +138,17 @@ export interface PaginatedResponse<T> {
   data: T[];
   total: number;
 }
+
+export interface User {
+  id: string;
+  username: string;
+  role: "USER" | "ADMIN";
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+}

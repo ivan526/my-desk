@@ -1,19 +1,42 @@
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log("开始种子数据...");
 
-  await prisma.dailyNote.deleteMany();
-  await prisma.achievement.deleteMany();
-  await prisma.weeklyReport.deleteMany();
-  await prisma.monthlyReport.deleteMany();
-  await prisma.review.deleteMany();
-  await prisma.task.deleteMany();
-  await prisma.project.deleteMany();
-  await prisma.category.deleteMany();
-  await prisma.setting.deleteMany();
+  // Find or create default admin user for seed data
+  let user = await prisma.user.findFirst({
+    where: { role: "ADMIN" },
+  });
+
+  if (!user) {
+    console.log("未找到管理员用户，创建默认admin账号...");
+    const passwordHash = await bcrypt.hash("admin123", 10);
+    user = await prisma.user.create({
+      data: {
+        username: "admin",
+        passwordHash,
+        role: "ADMIN",
+        isActive: true,
+      },
+    });
+    console.log("默认管理员账号已创建: 用户名 admin, 密码 admin123");
+  }
+
+  const userId = user.id;
+
+  // Clean up existing seed data for this user
+  await prisma.dailyNote.deleteMany({ where: { userId } });
+  await prisma.achievement.deleteMany({ where: { userId } });
+  await prisma.weeklyReport.deleteMany({ where: { userId } });
+  await prisma.monthlyReport.deleteMany({ where: { userId } });
+  await prisma.review.deleteMany({ where: { userId } });
+  await prisma.task.deleteMany({ where: { userId } });
+  await prisma.project.deleteMany({ where: { userId } });
+  await prisma.category.deleteMany({ where: { userId } });
+  await prisma.setting.deleteMany({ where: { userId } });
 
   const now = new Date();
   const thisMonth = now.getMonth();
@@ -29,6 +52,7 @@ async function main() {
         progress: 65,
         startDate: new Date(thisYear, thisMonth - 1, 1),
         endDate: new Date(thisYear, thisMonth + 2, 30),
+        userId,
       },
     }),
     prisma.project.create({
@@ -39,6 +63,7 @@ async function main() {
         priority: "medium",
         progress: 40,
         startDate: new Date(thisYear, thisMonth, 1),
+        userId,
       },
     }),
     prisma.project.create({
@@ -48,6 +73,7 @@ async function main() {
         status: "active",
         priority: "medium",
         progress: 80,
+        userId,
       },
     }),
     prisma.project.create({
@@ -59,6 +85,7 @@ async function main() {
         progress: 100,
         startDate: new Date(thisYear, thisMonth - 1, 15),
         endDate: new Date(thisYear, thisMonth - 1, 25),
+        userId,
       },
     }),
   ]);
@@ -73,6 +100,7 @@ async function main() {
         category: "项目任务",
         projectId: projects[0].id,
         completedAt: new Date(thisYear, thisMonth, 3),
+        userId,
       },
     }),
     prisma.task.create({
@@ -84,6 +112,7 @@ async function main() {
         category: "项目任务",
         projectId: projects[1].id,
         completedAt: new Date(thisYear, thisMonth, 5),
+        userId,
       },
     }),
     prisma.task.create({
@@ -95,6 +124,7 @@ async function main() {
         category: "流程优化",
         projectId: projects[2].id,
         completedAt: new Date(thisYear, thisMonth, 7),
+        userId,
       },
     }),
     prisma.task.create({
@@ -105,6 +135,7 @@ async function main() {
         priority: "low",
         category: "会议沟通",
         completedAt: new Date(thisYear, thisMonth, 8),
+        userId,
       },
     }),
     prisma.task.create({
@@ -115,6 +146,7 @@ async function main() {
         priority: "high",
         category: "项目任务",
         projectId: projects[0].id,
+        userId,
       },
     }),
     prisma.task.create({
@@ -125,6 +157,7 @@ async function main() {
         priority: "medium",
         category: "项目任务",
         projectId: projects[1].id,
+        userId,
       },
     }),
     prisma.task.create({
@@ -134,6 +167,7 @@ async function main() {
         status: "todo",
         priority: "low",
         category: "学习提升",
+        userId,
       },
     }),
     prisma.task.create({
@@ -143,6 +177,7 @@ async function main() {
         status: "todo",
         priority: "high",
         category: "日常任务",
+        userId,
       },
     }),
   ]);
@@ -159,6 +194,7 @@ async function main() {
         value: "处理建议可直接复用于后续SKU风险监控流程",
         category: "分析报告",
         date: new Date(thisYear, thisMonth, 3),
+        userId,
       },
     }),
     prisma.achievement.create({
@@ -172,6 +208,7 @@ async function main() {
         value: "设计方案可直接指导后续开发",
         category: "项目推进",
         date: new Date(thisYear, thisMonth, 5),
+        userId,
       },
     }),
     prisma.achievement.create({
@@ -185,6 +222,7 @@ async function main() {
         value: "每周节省2小时手动操作时间",
         category: "流程优化",
         date: new Date(thisYear, thisMonth, 7),
+        userId,
       },
     }),
     prisma.achievement.create({
@@ -197,6 +235,7 @@ async function main() {
         value: "行动项模板可复用于后续会议",
         category: "团队协作",
         date: new Date(thisYear, thisMonth, 8),
+        userId,
       },
     }),
   ]);
@@ -207,6 +246,7 @@ async function main() {
         content: "今天完成了高风险SKU分析，发现12个问题SKU，输出了处理建议。",
         date: new Date(thisYear, thisMonth, 3),
         mood: "great",
+        userId,
       },
     }),
     prisma.dailyNote.create({
@@ -214,6 +254,7 @@ async function main() {
         content: "看板原型设计通过评审，但有几个交互细节需要调整。",
         date: new Date(thisYear, thisMonth, 5),
         mood: "good",
+        userId,
       },
     }),
     prisma.dailyNote.create({
@@ -221,6 +262,7 @@ async function main() {
         content: "自动化脚本跑通了，测试通过。下周可以正式启用。",
         date: new Date(thisYear, thisMonth, 7),
         mood: "great",
+        userId,
       },
     }),
     prisma.dailyNote.create({
@@ -228,15 +270,27 @@ async function main() {
         content: "今天组织了团队周会，大家对齐了重点事项。下午开始准备增长方案评审。",
         date: new Date(thisYear, thisMonth, 8),
         mood: "normal",
+        userId,
       },
     }),
   ]);
 
   await prisma.setting.create({
-    data: { key: "weeklyGoal", value: "10" },
+    data: { key: "weeklyGoal", value: "10", userId },
   });
 
+  // Mark converted tasks
+  await Promise.all(
+    tasks.slice(0, 4).map((t) =>
+      prisma.task.update({
+        where: { id: t.id },
+        data: { isConverted: true },
+      })
+    )
+  );
+
   console.log("种子数据完成！");
+  console.log(`- 用户: ${user.username} (${user.role})`);
   console.log(`- ${projects.length} 个项目`);
   console.log(`- ${tasks.length} 个任务`);
   console.log(`- 4 项工作成果`);

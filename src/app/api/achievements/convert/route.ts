@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = requireUserId(request);
     const body = await request.json();
     const { taskId } = body;
 
@@ -10,8 +12,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "缺少 taskId" }, { status: 400 });
     }
 
-    const task = await prisma.task.findUnique({
-      where: { id: taskId },
+    const task = await prisma.task.findFirst({
+      where: { id: taskId, userId },
       include: { project: true },
     });
 
@@ -20,8 +22,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (task.isConverted) {
-      const existing = await prisma.achievement.findUnique({
-        where: { taskId },
+      const existing = await prisma.achievement.findFirst({
+        where: { taskId, userId },
       });
       if (existing) {
         return NextResponse.json({ data: existing, message: "任务已转化为成果" });
@@ -39,6 +41,7 @@ export async function POST(request: NextRequest) {
         value: "",
         category: "其他",
         date: task.completedAt || new Date(),
+        userId,
       },
       include: { task: true, project: true },
     });

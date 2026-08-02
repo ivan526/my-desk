@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function GET(request: NextRequest) {
+  const userId = requireUserId(request);
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
   const priority = searchParams.get("priority");
   const projectId = searchParams.get("projectId");
   const category = searchParams.get("category");
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { userId };
   if (status) where.status = status;
   if (priority) where.priority = priority;
   if (projectId) where.projectId = projectId;
@@ -25,6 +27,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = requireUserId(request);
     const body = await request.json();
     const task = await prisma.task.create({
       data: {
@@ -36,6 +39,7 @@ export async function POST(request: NextRequest) {
         tags: body.tags || "",
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
         projectId: body.projectId || null,
+        userId,
       },
       include: { project: true },
     });

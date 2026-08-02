@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const userId = requireUserId(request);
   const projects = await prisma.project.findMany({
+    where: { userId },
     include: {
       _count: { select: { tasks: true, achievements: true } },
     },
@@ -13,6 +16,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = requireUserId(request);
     const body = await request.json();
     const project = await prisma.project.create({
       data: {
@@ -23,6 +27,7 @@ export async function POST(request: NextRequest) {
         progress: body.progress || 0,
         startDate: body.startDate ? new Date(body.startDate) : null,
         endDate: body.endDate ? new Date(body.endDate) : null,
+        userId,
       },
     });
     return NextResponse.json({ data: project });

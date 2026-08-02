@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store";
 
 const NAV_ITEMS = [
   { href: "/", label: "首页", icon: HomeIcon },
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuthStore();
 
   return (
     <aside className="w-56 h-screen bg-bg-card border-r border-bg-tertiary flex flex-col flex-shrink-0">
@@ -49,9 +51,43 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {user?.role === "ADMIN" && (
+          <>
+            <div className="px-5 py-2 mt-2 text-2xs text-ink-hint">管理</div>
+            <Link
+              href="/admin/users"
+              className={cn(
+                "flex items-center gap-2.5 px-5 py-2 text-sm transition-colors",
+                pathname.startsWith("/admin")
+                  ? "bg-coral-50 text-coral-700 font-medium border-r-2 border-coral-500"
+                  : "text-ink-secondary hover:bg-bg-secondary hover:text-ink-primary"
+              )}
+            >
+              <UserIcon className="w-4 h-4 flex-shrink-0" />
+              <span>用户管理</span>
+            </Link>
+          </>
+        )}
       </nav>
 
       <div className="px-5 py-3 border-t border-bg-tertiary">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-sm font-medium text-ink-primary truncate max-w-[120px]">
+              {user?.username}
+            </p>
+            <p className="text-2xs text-ink-hint">
+              {user?.role === "ADMIN" ? "管理员" : "普通用户"}
+            </p>
+          </div>
+          <button
+            onClick={logout}
+            className="text-2xs text-coral-600 hover:text-coral-700"
+          >
+            退出
+          </button>
+        </div>
         <p className="text-2xs text-ink-hint">
           {new Date().getFullYear()} · 个人工作台
         </p>
@@ -134,6 +170,15 @@ function SettingsIcon({ className }: { className?: string }) {
     <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="8" cy="8" r="2" />
       <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function UserIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="5" r="3" />
+      <path d="M2 14c0-3 3-5 6-5s6 2 6 5" strokeLinecap="round" />
     </svg>
   );
 }

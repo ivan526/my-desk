@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
-export async function GET() {
-  const settings = await prisma.setting.findMany();
+export async function GET(request: NextRequest) {
+  const userId = requireUserId(request);
+  const settings = await prisma.setting.findMany({
+    where: { userId }
+  });
   const settingsMap: Record<string, string> = {};
   settings.forEach((s) => {
     settingsMap[s.key] = s.value;
@@ -12,12 +16,13 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
+    const userId = requireUserId(request);
     const body = await request.json();
     const results = [];
     for (const [key, value] of Object.entries(body)) {
       const setting = await prisma.setting.upsert({
-        where: { key },
-        create: { key, value: String(value) },
+        where: { userId_key: { userId, key } },
+        create: { key, value: String(value), userId },
         update: { value: String(value) },
       });
       results.push(setting);

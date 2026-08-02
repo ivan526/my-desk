@@ -7,6 +7,26 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id           String        @id @default(cuid())
+  username     String        @unique
+  passwordHash String
+  role         String        @default("USER") // USER or ADMIN
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tasks        Task[]
+  projects     Project[]
+  achievements Achievement[]
+  notes        DailyNote[]
+  weeklyReports WeeklyReport[]
+  monthlyReports MonthlyReport[]
+  reviews      Review[]
+  categories   Category[]
+  settings     Setting[]
+}
+
 model Task {
   id          String     @id @default(cuid())
   title       String
@@ -22,6 +42,8 @@ model Task {
   isConverted Boolean    @default(false)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   achievement Achievement?
   notes       DailyNote[]
@@ -38,6 +60,8 @@ model Project {
   endDate     DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   tasks       Task[]
   achievements Achievement[]
@@ -58,6 +82,8 @@ model Achievement {
   date        DateTime   @default(now())
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model DailyNote {
@@ -69,6 +95,8 @@ model DailyNote {
   mood        String     @default("")
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model WeeklyReport {
@@ -84,6 +112,8 @@ model WeeklyReport {
   isAuto           Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model MonthlyReport {
@@ -97,6 +127,8 @@ model MonthlyReport {
   isAuto               Boolean  @default(true)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Review {
@@ -108,6 +140,8 @@ model Review {
   summary                 String   @default("")
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
+  userId                  String
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Category {
@@ -116,11 +150,17 @@ model Category {
   type      String
   color     String   @default("")
   createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Setting {
   id        String   @id @default(cuid())
-  key       String   @unique
+  key       String
   value     String   @default("")
   updatedAt DateTime @updatedAt
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
 }

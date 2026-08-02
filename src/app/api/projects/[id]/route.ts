@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const project = await prisma.project.findUnique({
-    where: { id: params.id },
+  const userId = requireUserId(request);
+  const project = await prisma.project.findFirst({
+    where: { id: params.id, userId },
     include: {
       tasks: { orderBy: { createdAt: "desc" } },
       achievements: { orderBy: { date: "desc" } },
@@ -23,6 +25,15 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const userId = requireUserId(request);
+
+    const existing = await prisma.project.findFirst({
+      where: { id: params.id, userId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+    }
+
     const body = await request.json();
     const data: Record<string, unknown> = {};
     if (body.name !== undefined) data.name = body.name;
@@ -51,10 +62,19 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const userId = requireUserId(request);
+
+    const existing = await prisma.project.findFirst({
+      where: { id: params.id, userId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+    }
+
     await prisma.project.delete({ where: { id: params.id } });
     return NextResponse.json({ data: { success: true } });
   } catch (error) {

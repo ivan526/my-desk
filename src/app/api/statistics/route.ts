@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUserId } from "@/lib/api-utils";
 
 export async function GET(request: NextRequest) {
+  const userId = requireUserId(request);
   const { searchParams } = new URL(request.url);
   const year = parseInt(searchParams.get("year") || String(new Date().getFullYear()));
 
@@ -10,6 +12,7 @@ export async function GET(request: NextRequest) {
 
   const tasks = await prisma.task.findMany({
     where: {
+      userId,
       OR: [
         { completedAt: { gte: yearStart, lte: yearEnd } },
         { createdAt: { gte: yearStart, lte: yearEnd } },
@@ -18,11 +21,11 @@ export async function GET(request: NextRequest) {
   });
 
   const achievements = await prisma.achievement.findMany({
-    where: { date: { gte: yearStart, lte: yearEnd } },
+    where: { userId, date: { gte: yearStart, lte: yearEnd } },
   });
 
   const projects = await prisma.project.findMany({
-    where: { createdAt: { gte: yearStart, lte: yearEnd } },
+    where: { userId, createdAt: { gte: yearStart, lte: yearEnd } },
   });
 
   const monthlyData = [];
@@ -56,17 +59,11 @@ export async function GET(request: NextRequest) {
     achievementCategoryData[cat] = (achievementCategoryData[cat] || 0) + 1;
   });
 
-  const priorityData = {
-    high: tasks.filter((t) => t.priority === "high").length,
-    medium: tasks.filter((t) => t.priority === "medium").length,
-    low: tasks.filter((t) => t.priority === "low").length,
-  };
-
   const lastYearTasks = await prisma.task.count({
-    where: { completedAt: { gte: new Date(year - 1, 0, 1), lte: new Date(year - 1, 11, 31, 23, 59, 59) } },
+    where: { userId, completedAt: { gte: new Date(year - 1, 0, 1), lte: new Date(year - 1, 11, 31, 23, 59, 59) } },
   });
   const lastYearAchievements = await prisma.achievement.count({
-    where: { date: { gte: new Date(year - 1, 0, 1), lte: new Date(year - 1, 11, 31, 23, 59, 59) } },
+    where: { userId, date: { gte: new Date(year - 1, 0, 1), lte: new Date(year - 1, 11, 31, 23, 59, 59) } },
   });
 
   const thisYearTasks = tasks.filter((t) => t.status === "done").length;
@@ -82,7 +79,6 @@ export async function GET(request: NextRequest) {
       monthlyData,
       taskStatusData,
       achievementCategoryData: Object.entries(achievementCategoryData).map(([category, count]) => ({ category, count })),
-      priorityData,
       yearOverYear: {
         tasksGrowth: lastYearTasks > 0 ? Math.round(((thisYearTasks - lastYearTasks) / lastYearTasks) * 100) : 0,
         achievementsGrowth: lastYearAchievements > 0 ? Math.round(((thisYearAchievements - lastYearAchievements) / lastYearAchievements) * 100) : 0,
