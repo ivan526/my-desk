@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String     @default("")
+  status      String     @default("todo")
+  priority    String     @default("medium")
+  category    String     @default("")
+  tags        String     @default("")
+  dueDate     DateTime?
+  completedAt DateTime?
+  projectId   String?
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  isConverted Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  achievement Achievement?
+  notes       DailyNote[]
+}
+
+model Project {
+  id          String     @id @default(cuid())
+  name        String
+  description String     @default("")
+  status      String     @default("active")
+  priority    String     @default("medium")
+  progress    Int        @default(0)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  tasks       Task[]
+  achievements Achievement[]
+}
+
+model Achievement {
+  id          String     @id @default(cuid())
+  title       String
+  taskId      String?    @unique
+  task        Task?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  projectId   String?
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  scenario    String     @default("")
+  result      String     @default("")
+  output      String     @default("")
+  value       String     @default("")
+  category    String     @default("")
+  date        DateTime   @default(now())
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model DailyNote {
+  id          String     @id @default(cuid())
+  content     String
+  date        DateTime   @default(now())
+  taskId      String?
+  task        Task?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  mood        String     @default("")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model WeeklyReport {
+  id               String   @id @default(cuid())
+  weekStart        DateTime
+  weekEnd          DateTime
+  tasksCompleted   Int      @default(0)
+  projectsCount    Int      @default(0)
+  achievementsCount Int     @default(0)
+  summary          String   @default("")
+  issues           String   @default("")
+  nextPlan         String   @default("")
+  isAuto           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model MonthlyReport {
+  id                   String   @id @default(cuid())
+  month                DateTime
+  tasksCompleted       Int      @default(0)
+  projectsCount        Int      @default(0)
+  achievementsCount    Int      @default(0)
+  collaborationsCount  Int      @default(0)
+  summary              String   @default("")
+  isAuto               Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model Review {
+  id                      String   @id @default(cuid())
+  month                   DateTime
+  achievementCategories   String   @default("[]")
+  investmentDistribution  String   @default("[]")
+  trends                  String   @default("[]")
+  summary                 String   @default("")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  color     String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @default("")
+  updatedAt DateTime @updatedAt
+}
