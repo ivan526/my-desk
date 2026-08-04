@@ -175,7 +175,8 @@ model CliCommand {
   schedule     String   // cron expression
   outputType   String   @default("text") // text or json
   fieldMapping String   @default("{}") // JSON field mapping config
-  importType   String   @default("note") // note/task/achievement
+  importType   String   @default("auto") // auto(AI解析)/note/task/achievement
+  useAI        Boolean  @default(true) // whether to use AI to parse output
   enabled      Boolean  @default(true)
   lastRunAt    DateTime?
   userId       String

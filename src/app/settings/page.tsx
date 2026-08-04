@@ -24,6 +24,7 @@ const PRESET_SCHEDULES = [
 ];
 
 const IMPORT_TYPES = [
+  { value: "auto", label: "AI智能识别（推荐）" },
   { value: "note", label: "导入到每日小记" },
   { value: "task", label: "导入为新任务" },
   { value: "achievement", label: "导入为工作成果" },
@@ -35,7 +36,17 @@ const OUTPUT_TYPES = [
 ];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"categories" | "preferences" | "data" | "cli">("categories");
+  const [activeTab, setActiveTab] = useState<"categories" | "preferences" | "data" | "cli" | "ai" | "skills">("categories");
+
+  // AI config state
+  const [aiConfig, setAiConfig] = useState({
+    apiKey: "",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-3.5-turbo",
+  });
+  const [presetSkills, setPresetSkills] = useState<{ id: string; name: string; description: string; icon: string; tags: string[]; version: string }[]>([]);
+  const [importJsonOpen, setImportJsonOpen] = useState(false);
+  const [importJson, setImportJson] = useState("");
 
   // Categories state
   const [categories, setCategories] = useState<Category[]>([]);
@@ -57,9 +68,10 @@ export default function SettingsPage() {
     schedule: PRESET_SCHEDULES[0].value,
     customSchedule: "",
     outputType: "text" as "text" | "json",
-    importType: "note" as "note" | "task" | "achievement",
+    importType: "auto" as "auto" | "note" | "task" | "achievement",
     fieldMapping: "{}",
     enabled: true,
+    useAI: true,
   });
   const [cliLogs, setCliLogs] = useState<CliExecutionLog[]>([]);
   const [logsOpen, setLogsOpen] = useState(false);
@@ -69,6 +81,8 @@ export default function SettingsPage() {
     { key: "categories", label: "分类管理" },
     { key: "preferences", label: "偏好设置" },
     { key: "cli", label: "CLI集成" },
+    { key: "skills", label: "技能市场" },
+    { key: "ai", label: "AI配置" },
     { key: "data", label: "数据管理" },
   ] as const;
 
@@ -85,7 +99,66 @@ export default function SettingsPage() {
     const { data } = await fetchAPI<Record<string, string>>("/api/settings");
     if (data) {
       setWeeklyGoal(data.weeklyGoal || "10");
+      setAiConfig({
+        apiKey: data.ai_api_key || "",
+        baseUrl: data.ai_base_url || "https://api.openai.com/v1",
+        model: data.ai_model || "gpt-3.5-turbo",
+      });
     }
+  };
+
+  // Load preset skills
+  const loadPresetSkills = async () => {
+    const { data } = await fetchAPI<typeof presetSkills>("/api/cli/skills");
+    if (data) setPresetSkills(data);
+  };
+
+  const handleSaveAIConfig = async () => {
+    await fetchAPI("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        ai_api_key: aiConfig.apiKey,
+        ai_base_url: aiConfig.baseUrl,
+        ai_model: aiConfig.model,
+      }),
+    });
+    alert("AI配置已保存");
+  };
+
+  const handleInstallSkill = async (skillId: string) => {
+    const skill = presetSkills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const customSchedule = prompt("请输入定时规则（cron表达式，默认工作日18点）：", "0 0 18 * * 1-5");
+    if (customSchedule === null) return;
+
+    await fetchAPI("/api/cli/skills", {
+      method: "POST",
+      body: JSON.stringify({
+        skill,
+        customizations: {
+          schedule: customSchedule || "0 0 18 * * 1-5",
+        },
+      }),
+    });
+
+    alert(`技能「${skill.name}」安装成功！`);
+    loadCliCommands();
+  };
+
+  const handleImportSkill = async () => {
+    if (!importJson.trim()) {
+      alert("请输入Skill JSON内容");
+      return;
+    }
+    await fetchAPI("/api/cli/skills/import", {
+      method: "POST",
+      body: JSON.stringify({ skillJson: importJson }),
+    });
+    setImportJsonOpen(false);
+    setImportJson("");
+    alert("Skill导入成功！");
+    loadCliCommands();
   };
 
   // Load CLI commands
@@ -107,6 +180,7 @@ export default function SettingsPage() {
     loadCategories();
     loadSettings();
     loadCliCommands();
+    loadPresetSkills();
   }, [loadCategories, loadCliCommands]);
 
   const handleAddCategory = async () => {
@@ -166,9 +240,10 @@ export default function SettingsPage() {
         schedule: preset ? preset.value : "custom",
         customSchedule: preset ? "" : cmd.schedule,
         outputType: cmd.outputType as "text" | "json",
-        importType: cmd.importType as "note" | "task" | "achievement",
+        importType: cmd.importType as "auto" | "note" | "task" | "achievement",
         fieldMapping: cmd.fieldMapping,
         enabled: cmd.enabled,
+        useAI: cmd.useAI ?? true,
       });
     } else {
       setEditingCommand(null);
@@ -179,9 +254,10 @@ export default function SettingsPage() {
         schedule: PRESET_SCHEDULES[0].value,
         customSchedule: "",
         outputType: "text",
-        importType: "note",
+        importType: "auto",
         fieldMapping: "{}",
         enabled: true,
+        useAI: true,
       });
     }
     setCliFormOpen(true);
@@ -458,6 +534,99 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {activeTab === "skills" && (
+        <div className="space-y-4">
+          <Card>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-medium text-ink-primary">技能市场</h3>
+                <p className="text-xs text-ink-hint mt-1">
+                  一键安装预置技能，自动配置CLI命令，支持AI自动解析导入
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setImportJsonOpen(true)}
+              >
+                导入本地Skill
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {presetSkills.map((skill) => (
+                <div key={skill.id} className="p-3 border border-bg-tertiary rounded-lg hover:border-moss-300 transition-colors">
+                  <div className="flex items-start gap-2 mb-2">
+                    <span className="text-2xl">{skill.icon || "🔧"}</span>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-ink-primary">{skill.name}</h4>
+                      <p className="text-2xs text-ink-hint">v{skill.version}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-ink-secondary mb-3 line-clamp-2">{skill.description}</p>
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {skill.tags?.map(tag => (
+                      <span key={tag} className="text-2xs bg-bg-secondary text-ink-tertiary px-1.5 py-0.5 rounded">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => handleInstallSkill(skill.id)}
+                  >
+                    一键安装
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === "ai" && (
+        <Card>
+          <h3 className="text-sm font-medium text-ink-primary mb-2">AI 智能解析配置</h3>
+          <p className="text-xs text-ink-hint mb-4">
+            配置大模型API后，将自动使用AI解析CLI输出内容，智能识别待办任务、工作成果、每日记录，无需手动配置字段映射。
+            支持所有OpenAI兼容接口（OpenAI、豆包、通义千问、DeepSeek等）。
+          </p>
+          <div className="space-y-4">
+            <Input
+              label="API Key"
+              type="password"
+              value={aiConfig.apiKey}
+              onChange={(e) => setAiConfig({ ...aiConfig, apiKey: e.target.value })}
+              placeholder="sk-xxxxxxxxxxxxxxxx"
+            />
+            <Input
+              label="API Base URL"
+              value={aiConfig.baseUrl}
+              onChange={(e) => setAiConfig({ ...aiConfig, baseUrl: e.target.value })}
+              placeholder="https://api.openai.com/v1"
+            />
+            <Input
+              label="模型名称"
+              value={aiConfig.model}
+              onChange={(e) => setAiConfig({ ...aiConfig, model: e.target.value })}
+              placeholder="gpt-3.5-turbo / doubao-pro-32k / qwen-plus 等"
+            />
+            <div className="bg-blue-50 text-blue-700 text-2xs p-3 rounded-md">
+              <p className="font-medium mb-1">💡 常用API地址参考：</p>
+              <p>• OpenAI：https://api.openai.com/v1</p>
+              <p>• 豆包（火山引擎）：https://ark.cn-beijing.volces.com/api/v3</p>
+              <p>• 通义千问：https://dashscope.aliyuncs.com/compatible-mode/v1</p>
+              <p>• DeepSeek：https://api.deepseek.com/v1</p>
+            </div>
+            <Button variant="primary" onClick={handleSaveAIConfig}>
+              保存AI配置
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {activeTab === "data" && (
         <Card>
           <div className="space-y-4">
@@ -537,12 +706,12 @@ export default function SettingsPage() {
             <Select
               label="导入到"
               value={cliForm.importType}
-              onChange={(e) => setCliForm({ ...cliForm, importType: e.target.value as "note" | "task" | "achievement" })}
+              onChange={(e) => setCliForm({ ...cliForm, importType: e.target.value as "auto" | "note" | "task" | "achievement" })}
               options={IMPORT_TYPES}
             />
           </div>
 
-          {cliForm.outputType === "json" && (
+          {cliForm.outputType === "json" && cliForm.importType !== "auto" && (
             <Textarea
               label="字段映射（JSON格式）"
               value={cliForm.fieldMapping}
@@ -552,17 +721,37 @@ export default function SettingsPage() {
             />
           )}
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="cli-enabled"
-              checked={cliForm.enabled}
-              onChange={(e) => setCliForm({ ...cliForm, enabled: e.target.checked })}
-              className="w-4 h-4 text-moss-600 rounded"
-            />
-            <label htmlFor="cli-enabled" className="text-sm text-ink-secondary">
-              启用该命令
-            </label>
+          {cliForm.importType === "auto" && (
+            <div className="bg-amber-50 text-amber-700 text-2xs p-3 rounded-md">
+              <p>🤖 AI智能识别模式：会自动解析CLI输出内容，区分待办任务、工作成果、每日记录，自动导入到对应模块。需要在「AI配置」页配置大模型API Key。</p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="cli-enabled"
+                checked={cliForm.enabled}
+                onChange={(e) => setCliForm({ ...cliForm, enabled: e.target.checked })}
+                className="w-4 h-4 text-moss-600 rounded"
+              />
+              <label htmlFor="cli-enabled" className="text-sm text-ink-secondary">
+                启用该命令
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="cli-use-ai"
+                checked={cliForm.useAI}
+                onChange={(e) => setCliForm({ ...cliForm, useAI: e.target.checked })}
+                className="w-4 h-4 text-moss-600 rounded"
+              />
+              <label htmlFor="cli-use-ai" className="text-sm text-ink-secondary">
+                使用AI增强解析
+              </label>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

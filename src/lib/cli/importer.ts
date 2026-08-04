@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { MappedResult } from "./mapper";
+import { parseContentWithAI } from "@/lib/ai/parser";
 
 export async function importData(
   userId: string,
@@ -41,7 +42,7 @@ export async function importData(
             title: mapped.data.title as string,
             description: (mapped.data.description as string) || "",
             priority: (mapped.data.priority as string) || "medium",
-            status: (mapped.data.status as string) || "todo",
+            status: "todo",
             category: (mapped.data.category as string) || "",
             userId,
           },
@@ -72,9 +73,88 @@ export async function importData(
   return importedCount;
 }
 
+export async function importParsedAIContent(
+  userId: string,
+  parsed: {
+    notes: string[];
+    tasks: Array<{
+      title: string;
+      description?: string;
+      priority?: "high" | "medium" | "low";
+      dueDate?: string;
+      tags?: string[];
+    }>;
+    achievements: Array<{
+      title: string;
+      result?: string;
+      category?: string;
+    }>;
+  }
+): Promise<number> {
+  let count = 0;
+  const today = new Date();
+
+  // Import notes
+  for (const content of parsed.notes) {
+    if (!content.trim()) continue;
+    const existing = await prisma.dailyNote.findFirst({
+      where: {
+        userId,
+        date: { gte: new Date(today.getFullYear(), today.getMonth(), today.getDate()) },
+        content: content.trim(),
+      },
+    });
+    if (!existing) {
+      await prisma.dailyNote.create({
+        data: {
+          content: content.trim(),
+          date: today,
+          userId,
+        },
+      });
+      count++;
+    }
+  }
+
+  // Import tasks
+  for (const task of parsed.tasks) {
+    if (!task.title?.trim()) continue;
+    await prisma.task.create({
+      data: {
+        title: task.title.trim(),
+        description: task.description || "",
+        priority: task.priority || "medium",
+        status: "todo",
+        category: task.tags?.[0] || "",
+        tags: (task.tags || []).join(","),
+        dueDate: task.dueDate ? new Date(task.dueDate) : null,
+        userId,
+      },
+    });
+    count++;
+  }
+
+  // Import achievements
+  for (const ach of parsed.achievements) {
+    if (!ach.title?.trim()) continue;
+    await prisma.achievement.create({
+      data: {
+        title: ach.title.trim(),
+        result: ach.result || "",
+        category: ach.category || "其他",
+        date: today,
+        userId,
+      },
+    });
+    count++;
+  }
+
+  return count;
+}
+
 export async function runCliCommand(
   commandId: string
-): Promise<{ success: boolean; importedCount: number; output: string; error?: string; durationMs: number }> {
+): Promise<{ success: boolean; importedCount: number; output: string; error?: string; durationMs: number; aiUsed?: boolean }> {
   const { executeCommand } = await import("./executor");
   const { parseOutput } = await import("./parser");
   const { mapOutput } = await import("./mapper");
@@ -117,18 +197,33 @@ export async function runCliCommand(
     };
   }
 
-  // Parse output
-  const parsed = parseOutput(execResult.output, command.outputType as "text" | "json");
+  let importedCount = 0;
+  let aiUsed = false;
 
-  // Map fields
-  const mapped = mapOutput(
-    parsed,
-    command.importType as "note" | "task" | "achievement",
-    command.fieldMapping
-  );
+  // Try AI parsing first if enabled
+  if (command.importType === "auto" || !command.importType) {
+    const aiParsed = await parseContentWithAI(command.userId, execResult.output);
+    if (aiParsed) {
+      aiUsed = true;
+      importedCount = await importParsedAIContent(command.userId, aiParsed);
+    }
+  }
 
-  // Import data
-  const importedCount = await importData(command.userId, mapped);
+  // Fallback to manual mapping if AI not used or failed
+  if (!aiUsed) {
+    // Parse output
+    const parsed = parseOutput(execResult.output, command.outputType as "text" | "json");
+
+    // Map fields
+    const mapped = mapOutput(
+      parsed,
+      command.importType as "note" | "task" | "achievement",
+      command.fieldMapping
+    );
+
+    // Import data
+    importedCount = await importData(command.userId, mapped);
+  }
 
   // Save log
   await prisma.cliExecutionLog.create({
@@ -152,5 +247,6 @@ export async function runCliCommand(
     importedCount,
     output: execResult.output,
     durationMs: Date.now() - startTime,
+    aiUsed,
   };
 }

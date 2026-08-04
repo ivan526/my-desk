@@ -161,11 +161,28 @@ export interface CliCommand {
   schedule: string;
   outputType: "text" | "json";
   fieldMapping: string;
-  importType: "note" | "task" | "achievement";
+  importType: "auto" | "note" | "task" | "achievement";
+  useAI: boolean;
   enabled: boolean;
   lastRunAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author?: string;
+  command: string;
+  cwd?: string;
+  defaultSchedule?: string;
+  outputType?: "text" | "json";
+  defaultImportType?: "auto" | "note" | "task" | "achievement";
+  useAI?: boolean;
+  tags?: string[];
+  icon?: string;
 }
 
 export interface CliExecutionLog {
