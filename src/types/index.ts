@@ -152,3 +152,29 @@ export interface LoginRequest {
   password: string;
   rememberMe?: boolean;
 }
+
+export interface CliCommand {
+  id: string;
+  name: string;
+  command: string;
+  cwd?: string;
+  schedule: string;
+  outputType: "text" | "json";
+  fieldMapping: string;
+  importType: "note" | "task" | "achievement";
+  enabled: boolean;
+  lastRunAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CliExecutionLog {
+  id: string;
+  commandId: string;
+  status: "success" | "failed";
+  output: string;
+  error?: string;
+  importedCount: number;
+  executedAt: string;
+  durationMs: number;
+}

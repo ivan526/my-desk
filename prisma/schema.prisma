@@ -25,6 +25,8 @@ model User {
   reviews      Review[]
   categories   Category[]
   settings     Setting[]
+  cliCommands  CliCommand[]
+  cliLogs      CliExecutionLog[]
 }
 
 model Task {
@@ -163,4 +165,36 @@ model Setting {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, key])
+}
+
+model CliCommand {
+  id           String   @id @default(cuid())
+  name         String
+  command      String
+  cwd          String?
+  schedule     String   // cron expression
+  outputType   String   @default("text") // text or json
+  fieldMapping String   @default("{}") // JSON field mapping config
+  importType   String   @default("note") // note/task/achievement
+  enabled      Boolean  @default(true)
+  lastRunAt    DateTime?
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs         CliExecutionLog[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CliExecutionLog {
+  id            String   @id @default(cuid())
+  commandId     String
+  command       CliCommand @relation(fields: [commandId], references: [id], onDelete: Cascade)
+  status        String   // success/failed
+  output        String   // raw output
+  error         String?  // error message
+  importedCount Int      @default(0)
+  executedAt    DateTime @default(now())
+  durationMs    Int      @default(0)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

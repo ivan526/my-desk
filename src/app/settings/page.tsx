@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { Card, Button, Input, Badge, EmptyState, Loading } from "@/components/ui";
+import { Card, Button, Input, Select, Badge, EmptyState, Loading, Modal, Textarea } from "@/components/ui";
 import { fetchAPI } from "@/lib/api";
+import { CliCommand, CliExecutionLog } from "@/types";
+import { formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface Category {
   id: string;
@@ -12,20 +15,72 @@ interface Category {
   color: string;
 }
 
-export default function SettingsPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [newCategory, setNewCategory] = useState({ name: "", type: "task", color: "" });
-  const [weeklyGoal, setWeeklyGoal] = useState("10");
-  const [activeTab, setActiveTab] = useState<"categories" | "preferences" | "data">("categories");
+const PRESET_SCHEDULES = [
+  { label: "工作日18:00", value: "0 0 18 * * 1-5" },
+  { label: "每天20:00", value: "0 0 20 * * *" },
+  { label: "每小时", value: "0 0 * * * *" },
+  { label: "每周五17:00", value: "0 0 17 * * 5" },
+  { label: "自定义", value: "custom" },
+];
 
-  const loadCategories = async () => {
-    setLoading(true);
+const IMPORT_TYPES = [
+  { value: "note", label: "导入到每日小记" },
+  { value: "task", label: "导入为新任务" },
+  { value: "achievement", label: "导入为工作成果" },
+];
+
+const OUTPUT_TYPES = [
+  { value: "text", label: "纯文本" },
+  { value: "json", label: "JSON" },
+];
+
+export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<"categories" | "preferences" | "data" | "cli">("categories");
+
+  // Categories state
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [newCategory, setNewCategory] = useState({ name: "", type: "task", color: "" });
+
+  // Preferences state
+  const [weeklyGoal, setWeeklyGoal] = useState("10");
+
+  // CLI state
+  const [cliCommands, setCliCommands] = useState<CliCommand[]>([]);
+  const [cliLoading, setCliLoading] = useState(true);
+  const [cliFormOpen, setCliFormOpen] = useState(false);
+  const [editingCommand, setEditingCommand] = useState<CliCommand | null>(null);
+  const [cliForm, setCliForm] = useState({
+    name: "",
+    command: "",
+    cwd: "",
+    schedule: PRESET_SCHEDULES[0].value,
+    customSchedule: "",
+    outputType: "text" as "text" | "json",
+    importType: "note" as "note" | "task" | "achievement",
+    fieldMapping: "{}",
+    enabled: true,
+  });
+  const [cliLogs, setCliLogs] = useState<CliExecutionLog[]>([]);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [runningCommand, setRunningCommand] = useState<string | null>(null);
+
+  const tabs = [
+    { key: "categories", label: "分类管理" },
+    { key: "preferences", label: "偏好设置" },
+    { key: "cli", label: "CLI集成" },
+    { key: "data", label: "数据管理" },
+  ] as const;
+
+  // Load categories
+  const loadCategories = useCallback(async () => {
+    setCategoriesLoading(true);
     const { data } = await fetchAPI<Category[]>("/api/categories");
     if (data) setCategories(data);
-    setLoading(false);
-  };
+    setCategoriesLoading(false);
+  }, []);
 
+  // Load settings
   const loadSettings = async () => {
     const { data } = await fetchAPI<Record<string, string>>("/api/settings");
     if (data) {
@@ -33,10 +88,26 @@ export default function SettingsPage() {
     }
   };
 
+  // Load CLI commands
+  const loadCliCommands = useCallback(async () => {
+    setCliLoading(true);
+    const { data } = await fetchAPI<CliCommand[]>("/api/cli/commands");
+    if (data) setCliCommands(data);
+    setCliLoading(false);
+  }, []);
+
+  const loadCliLogs = async (commandId?: string) => {
+    const { data } = await fetchAPI<CliExecutionLog[]>(
+      `/api/cli/logs${commandId ? `?commandId=${commandId}` : ""}`
+    );
+    if (data) setCliLogs(data);
+  };
+
   useEffect(() => {
     loadCategories();
     loadSettings();
-  }, []);
+    loadCliCommands();
+  }, [loadCategories, loadCliCommands]);
 
   const handleAddCategory = async () => {
     if (!newCategory.name.trim()) return;
@@ -49,9 +120,7 @@ export default function SettingsPage() {
   };
 
   const handleDeleteCategory = async (id: string) => {
-    await fetchAPI(`/api/categories/${id}`, {
-      method: "DELETE",
-    });
+    await fetchAPI(`/api/categories/${id}`, { method: "DELETE" });
     loadCategories();
   };
 
@@ -60,6 +129,7 @@ export default function SettingsPage() {
       method: "PUT",
       body: JSON.stringify({ weeklyGoal }),
     });
+    alert("设置已保存");
   };
 
   const handleExport = async () => {
@@ -85,15 +155,112 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const tabs = [
-    { key: "categories", label: "分类管理" },
-    { key: "preferences", label: "偏好设置" },
-    { key: "data", label: "数据管理" },
-  ];
+  const openCliForm = (cmd?: CliCommand) => {
+    if (cmd) {
+      setEditingCommand(cmd);
+      const preset = PRESET_SCHEDULES.find(p => p.value === cmd.schedule);
+      setCliForm({
+        name: cmd.name,
+        command: cmd.command,
+        cwd: cmd.cwd || "",
+        schedule: preset ? preset.value : "custom",
+        customSchedule: preset ? "" : cmd.schedule,
+        outputType: cmd.outputType as "text" | "json",
+        importType: cmd.importType as "note" | "task" | "achievement",
+        fieldMapping: cmd.fieldMapping,
+        enabled: cmd.enabled,
+      });
+    } else {
+      setEditingCommand(null);
+      setCliForm({
+        name: "",
+        command: "welink-cli today",
+        cwd: "",
+        schedule: PRESET_SCHEDULES[0].value,
+        customSchedule: "",
+        outputType: "text",
+        importType: "note",
+        fieldMapping: "{}",
+        enabled: true,
+      });
+    }
+    setCliFormOpen(true);
+  };
+
+  const handleSaveCliCommand = async () => {
+    if (!cliForm.name.trim() || !cliForm.command.trim()) {
+      alert("请填写名称和命令");
+      return;
+    }
+
+    const schedule = cliForm.schedule === "custom" ? cliForm.customSchedule : cliForm.schedule;
+    if (!schedule) {
+      alert("请填写定时规则");
+      return;
+    }
+
+    const payload = {
+      ...cliForm,
+      schedule,
+    };
+    delete (payload as any).customSchedule;
+
+    if (editingCommand) {
+      await fetchAPI(`/api/cli/commands/${editingCommand.id}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await fetchAPI("/api/cli/commands", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
+
+    setCliFormOpen(false);
+    loadCliCommands();
+  };
+
+  const handleDeleteCliCommand = async (id: string) => {
+    if (!confirm("确定删除这个CLI命令吗？")) return;
+    await fetchAPI(`/api/cli/commands/${id}`, { method: "DELETE" });
+    loadCliCommands();
+  };
+
+  const handleToggleCliCommand = async (cmd: CliCommand) => {
+    await fetchAPI(`/api/cli/commands/${cmd.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled: !cmd.enabled }),
+    });
+    loadCliCommands();
+  };
+
+  const handleRunCliCommand = async (id: string) => {
+    setRunningCommand(id);
+    const result = await fetchAPI<{ success: boolean; importedCount: number; output: string; error?: string }>(
+      `/api/cli/commands/${id}/run`,
+      { method: "POST" }
+    );
+    setRunningCommand(null);
+
+    if (result.data) {
+      if (result.data.success) {
+        alert(`执行成功，导入了 ${result.data.importedCount} 条数据`);
+      } else {
+        alert(`执行失败: ${result.data.error || "未知错误"}`);
+      }
+    }
+    loadCliCommands();
+  };
+
+  const openLogs = async () => {
+    await loadCliLogs();
+    setLogsOpen(true);
+  };
 
   return (
-    <PageContainer title="设置中心" subtitle="管理分类、偏好设置和数据">
-      <div className="flex gap-1 mb-4 bg-bg-secondary rounded-md p-0.5 w-fit">
+    <PageContainer title="设置中心" subtitle="管理分类、偏好设置、CLI集成和数据">
+      <div className="flex gap-1 mb-4 bg-bg-secondary rounded-md p-0.5 w-fit flex-wrap">
         {tabs.map((tab) => (
           <button
             key={tab.key}
@@ -102,7 +269,7 @@ export default function SettingsPage() {
                 ? "bg-bg-card text-ink-primary shadow-card"
                 : "text-ink-tertiary hover:text-ink-secondary"
             }`}
-            onClick={() => setActiveTab(tab.key as typeof activeTab)}
+            onClick={() => setActiveTab(tab.key)}
           >
             {tab.label}
           </button>
@@ -111,7 +278,7 @@ export default function SettingsPage() {
 
       {activeTab === "categories" && (
         <Card>
-          {loading ? (
+          {categoriesLoading ? (
             <Loading />
           ) : (
             <>
@@ -184,6 +351,113 @@ export default function SettingsPage() {
         </Card>
       )}
 
+      {activeTab === "cli" && (
+        <div className="space-y-4">
+          <Card>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-medium text-ink-primary">外部CLI命令集成</h3>
+                <p className="text-xs text-ink-hint mt-1">
+                  配置外部CLI命令（如welink-cli），定时执行自动导入工作内容
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" onClick={openLogs}>
+                  执行日志
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => openCliForm()}
+                >
+                  + 添加命令
+                </Button>
+              </div>
+            </div>
+
+            {cliLoading ? (
+              <Loading />
+            ) : cliCommands.length === 0 ? (
+              <EmptyState
+                title="暂无CLI命令"
+                description="添加外部CLI命令，实现自动同步工作内容"
+              />
+            ) : (
+              <div className="space-y-2">
+                {cliCommands.map((cmd) => (
+                  <div
+                    key={cmd.id}
+                    className="flex items-center justify-between p-3 bg-bg-secondary rounded-md"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-ink-primary">{cmd.name}</span>
+                        <Badge color={cmd.enabled ? "moss" : "gray"}>
+                          {cmd.enabled ? "已启用" : "已禁用"}
+                        </Badge>
+                        <Badge color="blue">
+                          {IMPORT_TYPES.find(t => t.value === cmd.importType)?.label}
+                        </Badge>
+                      </div>
+                      <code className="text-xs text-ink-tertiary mt-1 block truncate font-mono bg-bg-tertiary/50 px-2 py-0.5 rounded">
+                        {cmd.command}
+                      </code>
+                      <p className="text-2xs text-ink-hint mt-1">
+                        调度: {cmd.schedule}
+                        {cmd.lastRunAt && ` · 上次执行: ${formatDate(cmd.lastRunAt, "MM-dd HH:mm")}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <button
+                        className={cn(
+                          "text-2xs px-2 py-1 rounded",
+                          runningCommand === cmd.id
+                            ? "bg-bg-tertiary text-ink-hint cursor-wait"
+                            : "text-moss-600 hover:bg-moss-50"
+                        )}
+                        onClick={() => handleRunCliCommand(cmd.id)}
+                        disabled={runningCommand === cmd.id}
+                      >
+                        {runningCommand === cmd.id ? "执行中..." : "立即执行"}
+                      </button>
+                      <button
+                        className="text-2xs text-ink-tertiary hover:text-ink-primary px-2 py-1 rounded hover:bg-bg-tertiary"
+                        onClick={() => openCliForm(cmd)}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        className="text-2xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded"
+                        onClick={() => handleToggleCliCommand(cmd)}
+                      >
+                        {cmd.enabled ? "禁用" : "启用"}
+                      </button>
+                      <button
+                        className="text-2xs text-coral-500 hover:text-coral-600 px-2 py-1 rounded hover:bg-coral-50"
+                        onClick={() => handleDeleteCliCommand(cmd.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <h4 className="text-sm font-medium text-ink-primary mb-2">使用说明</h4>
+            <div className="text-xs text-ink-tertiary space-y-1.5">
+              <p>1. 确保要调用的CLI已经安装在系统中，并且在PATH环境变量中可访问</p>
+              <p>2. 命令执行工作目录默认是项目根目录，可以自定义cwd</p>
+              <p>3. 纯文本输出会直接作为内容导入，JSON输出会按照字段映射解析</p>
+              <p>4. 定时规则使用标准cron表达式：分 时 日 月 周</p>
+              <p>5. 执行超时时间为30秒，超时会自动终止进程</p>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {activeTab === "data" && (
         <Card>
           <div className="space-y-4">
@@ -205,6 +479,139 @@ export default function SettingsPage() {
           </div>
         </Card>
       )}
+
+      {/* CLI Command Form Modal */}
+      <Modal
+        open={cliFormOpen}
+        onClose={() => setCliFormOpen(false)}
+        title={editingCommand ? "编辑CLI命令" : "添加CLI命令"}
+        size="md"
+      >
+        <div className="space-y-4">
+          <Input
+            label="命令名称"
+            value={cliForm.name}
+            onChange={(e) => setCliForm({ ...cliForm, name: e.target.value })}
+            placeholder="如：welink每日同步"
+          />
+          <Input
+            label="执行命令"
+            value={cliForm.command}
+            onChange={(e) => setCliForm({ ...cliForm, command: e.target.value })}
+            placeholder="如：welink-cli today --output json"
+          />
+          <Input
+            label="工作目录（可选）"
+            value={cliForm.cwd}
+            onChange={(e) => setCliForm({ ...cliForm, cwd: e.target.value })}
+            placeholder="默认使用项目根目录"
+          />
+
+          <div>
+            <label className="label">定时规则</label>
+            <Select
+              value={cliForm.schedule}
+              onChange={(e) => setCliForm({ ...cliForm, schedule: e.target.value })}
+              options={[...PRESET_SCHEDULES.map(p => ({ value: p.value, label: p.label }))]}
+              className="mb-2"
+            />
+            {cliForm.schedule === "custom" && (
+              <Input
+                placeholder="cron表达式，如：0 30 18 * * 1-5"
+                value={cliForm.customSchedule}
+                onChange={(e) => setCliForm({ ...cliForm, customSchedule: e.target.value })}
+              />
+            )}
+            <p className="text-2xs text-ink-hint mt-1">
+              格式：分 时 日 月 周，例如 0 0 18 * * 1-5 表示工作日18点整
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Select
+              label="输出格式"
+              value={cliForm.outputType}
+              onChange={(e) => setCliForm({ ...cliForm, outputType: e.target.value as "text" | "json" })}
+              options={OUTPUT_TYPES}
+            />
+            <Select
+              label="导入到"
+              value={cliForm.importType}
+              onChange={(e) => setCliForm({ ...cliForm, importType: e.target.value as "note" | "task" | "achievement" })}
+              options={IMPORT_TYPES}
+            />
+          </div>
+
+          {cliForm.outputType === "json" && (
+            <Textarea
+              label="字段映射（JSON格式）"
+              value={cliForm.fieldMapping}
+              onChange={(e) => setCliForm({ ...cliForm, fieldMapping: e.target.value })}
+              placeholder='{"title": "${title}", "content": "${summary}"}'
+              className="min-h-[80px] font-mono text-xs"
+            />
+          )}
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="cli-enabled"
+              checked={cliForm.enabled}
+              onChange={(e) => setCliForm({ ...cliForm, enabled: e.target.checked })}
+              className="w-4 h-4 text-moss-600 rounded"
+            />
+            <label htmlFor="cli-enabled" className="text-sm text-ink-secondary">
+              启用该命令
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setCliFormOpen(false)}>取消</Button>
+            <Button variant="primary" onClick={handleSaveCliCommand}>保存</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Logs Modal */}
+      <Modal
+        open={logsOpen}
+        onClose={() => setLogsOpen(false)}
+        title="执行日志"
+        size="lg"
+      >
+        {cliLogs.length === 0 ? (
+          <EmptyState title="暂无执行日志" />
+        ) : (
+          <div className="space-y-2 max-h-[500px] overflow-y-auto">
+            {cliLogs.map((log) => (
+              <div
+                key={log.id}
+                className={cn(
+                  "p-3 rounded-md text-xs",
+                  log.status === "success" ? "bg-moss-50" : "bg-coral-50"
+                )}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className={cn(
+                    "font-medium",
+                    log.status === "success" ? "text-moss-700" : "text-coral-700"
+                  )}>
+                    {log.status === "success" ? "执行成功" : "执行失败"}
+                    {log.importedCount > 0 && ` · 导入${log.importedCount}条`}
+                  </span>
+                  <span className="text-ink-hint">
+                    {formatDate(log.executedAt, "MM-dd HH:mm:ss")} · {log.durationMs}ms
+                  </span>
+                </div>
+                {log.error && <p className="text-coral-600 mb-1">{log.error}</p>}
+                <pre className="whitespace-pre-wrap text-ink-tertiary bg-white/50 p-2 rounded text-2xs overflow-x-auto">
+                  {log.output || "(无输出)"}
+                </pre>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </PageContainer>
   );
 }
