@@ -20,12 +20,18 @@ echo [2/6] 清理旧构建缓存...
 if exist ".next" rmdir /s /q ".next"
 echo 清理完成
 
-echo [3/6] 安装依赖...
+echo [3/7] 安装依赖...
 call npm install
 if %errorlevel% neq 0 (
     echo 依赖安装失败，请检查网络或npm配置
     pause
     exit /b 1
+)
+
+:: 修复Next.js构建依赖缺失问题
+if not exist "node_modules\baseline-browser-mapping" (
+    echo 安装缺失的构建依赖...
+    call npm install baseline-browser-mapping --no-save
 )
 
 echo [4/6] 清理旧Prisma客户端...
