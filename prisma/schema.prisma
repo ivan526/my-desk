@@ -27,6 +27,58 @@ model User {
   settings     Setting[]
   cliCommands  CliCommand[]
   cliLogs      CliExecutionLog[]
+  apiKeys      ApiKey[]
+  agents       Agent[]
+}
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  name       String
+  keyHash    String   @unique
+  keyPrefix  String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastUsedAt DateTime?
+  createdAt  DateTime @default(now())
+}
+
+model Agent {
+  id              String   @id @default(cuid())
+  name            String
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status          String   @default("offline") // online/offline
+  lastSeenAt      DateTime?
+  version         String?
+  hostname        String?
+  os              String?
+  arch            String?
+  commandWhitelist String  @default("[]") // JSON array of allowed command patterns
+  allowCustomCommands Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  pendingTasks    AgentPendingTask[]
+  logs            CliExecutionLog[]
+
+  @@unique([userId, name])
+}
+
+model AgentPendingTask {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  commandId   String
+  command     String
+  cwd         String?
+  timeout     Int      @default(30000)
+  triggeredBy String   @default("schedule") // schedule/manual
+  status      String   @default("pending") // pending/sent/running/completed/failed/timeout
+  output      String?
+  error       String?
+  durationMs  Int?
+  createdAt   DateTime @default(now())
+  executedAt  DateTime?
+  completedAt DateTime?
 }
 
 model Task {
@@ -179,6 +231,7 @@ model CliCommand {
   useAI        Boolean  @default(true) // whether to use AI to parse output
   enabled      Boolean  @default(true)
   lastRunAt    DateTime?
+  runTarget    String   @default("server") // server/agent
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   logs         CliExecutionLog[]
@@ -190,6 +243,8 @@ model CliExecutionLog {
   id            String   @id @default(cuid())
   commandId     String
   command       CliCommand @relation(fields: [commandId], references: [id], onDelete: Cascade)
+  agentId       String?
+  agent         Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
   status        String   // success/failed
   output        String   // raw output
   error         String?  // error message

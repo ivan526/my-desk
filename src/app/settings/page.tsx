@@ -36,7 +36,13 @@ const OUTPUT_TYPES = [
 ];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"categories" | "preferences" | "data" | "cli" | "ai" | "skills">("categories");
+  const [activeTab, setActiveTab] = useState<"categories" | "preferences" | "data" | "cli" | "ai" | "skills" | "agent">("categories");
+
+  // Agent state
+  const [apiKeys, setApiKeys] = useState<{ id: string; name: string; keyPrefix: string; lastUsedAt?: string; createdAt: string }[]>([]);
+  const [agents, setAgents] = useState<{ id: string; name: string; status: string; os?: string; version?: string; lastSeenAt?: string; hostname?: string }[]>([]);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
 
   // AI config state
   const [aiConfig, setAiConfig] = useState({
@@ -82,6 +88,7 @@ export default function SettingsPage() {
     { key: "preferences", label: "偏好设置" },
     { key: "cli", label: "CLI集成" },
     { key: "skills", label: "技能市场" },
+    { key: "agent", label: "本地Agent" },
     { key: "ai", label: "AI配置" },
     { key: "data", label: "数据管理" },
   ] as const;
@@ -176,12 +183,49 @@ export default function SettingsPage() {
     if (data) setCliLogs(data);
   };
 
+  // Load API keys
+  const loadApiKeys = useCallback(async () => {
+    const { data } = await fetchAPI<typeof apiKeys>("/api/agent/keys");
+    if (data) setApiKeys(data);
+  }, []);
+
+  // Load agents
+  const loadAgents = useCallback(async () => {
+    const { data } = await fetchAPI<typeof agents>("/api/agent/agents");
+    if (data) setAgents(data);
+  }, []);
+
+  const handleCreateApiKey = async () => {
+    const name = newKeyName.trim() || `Agent ${new Date().toLocaleDateString()}`;
+    const { data } = await fetchAPI<{ id: string; key: string; keyPrefix: string }>("/api/agent/keys", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    if (data) {
+      setGeneratedKey(data.key);
+      setNewKeyName("");
+      loadApiKeys();
+    }
+  };
+
+  const handleRevokeKey = async (id: string) => {
+    if (!confirm("确定吊销这个API Key吗？使用该Key的Agent将无法连接。")) return;
+    await fetchAPI(`/api/agent/keys?id=${id}`, { method: "DELETE" });
+    loadApiKeys();
+  };
+
   useEffect(() => {
     loadCategories();
     loadSettings();
     loadCliCommands();
     loadPresetSkills();
-  }, [loadCategories, loadCliCommands]);
+    loadApiKeys();
+    loadAgents();
+
+    // Refresh agent status every 10 seconds
+    const interval = setInterval(loadAgents, 10000);
+    return () => clearInterval(interval);
+  }, [loadCategories, loadCliCommands, loadApiKeys, loadAgents]);
 
   const handleAddCategory = async () => {
     if (!newCategory.name.trim()) return;
@@ -581,6 +625,132 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === "agent" && (
+        <div className="space-y-4">
+          {/* API Key Management */}
+          <Card>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-medium text-ink-primary">API 密钥管理</h3>
+                <p className="text-xs text-ink-hint mt-1">
+                  生成API Key用于本地Agent连接服务端，Key只在生成时显示一次，请妥善保存
+                </p>
+              </div>
+            </div>
+
+            {generatedKey && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <p className="text-sm text-amber-800 font-medium mb-1">⚠️ 请保存好你的API Key</p>
+                <code className="text-xs bg-white p-2 rounded block break-all border border-amber-200">
+                  {generatedKey}
+                </code>
+                <p className="text-xs text-amber-700 mt-1">
+                  这是唯一一次显示该Key，关闭后无法再次查看，请复制保存到安全位置
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2 mb-4">
+              <Input
+                placeholder="Key名称（如：我的工作电脑）"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                className="flex-1"
+              />
+              <Button variant="primary" onClick={handleCreateApiKey}>
+                生成新密钥
+              </Button>
+            </div>
+
+            {apiKeys.length === 0 ? (
+              <p className="text-xs text-ink-hint text-center py-4">暂无API密钥，生成一个开始使用本地Agent</p>
+            ) : (
+              <div className="space-y-2">
+                {apiKeys.map((key) => (
+                  <div key={key.id} className="flex items-center justify-between p-2 bg-bg-secondary rounded-md">
+                    <div>
+                      <p className="text-sm text-ink-primary">{key.name}</p>
+                      <p className="text-2xs text-ink-hint font-mono">
+                        {key.keyPrefix}****
+                        {key.lastUsedAt && ` · 上次使用: ${formatDate(key.lastUsedAt, "MM-dd HH:mm")}`}
+                        {` · 创建于: ${formatDate(key.createdAt, "yyyy-MM-dd")}`}
+                      </p>
+                    </div>
+                    <button
+                      className="text-xs text-coral-600 hover:text-coral-700 px-2 py-1 rounded hover:bg-coral-50"
+                      onClick={() => handleRevokeKey(key.id)}
+                    >
+                      吊销
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Connected Agents */}
+          <Card>
+            <h3 className="text-sm font-medium text-ink-primary mb-2">已连接设备</h3>
+            <p className="text-xs text-ink-hint mb-4">所有连接到服务端的本地Agent设备</p>
+            {agents.length === 0 ? (
+              <EmptyState
+                title="暂无设备连接"
+                description="启动本地Agent后将显示在这里"
+              />
+            ) : (
+              <div className="space-y-2">
+                {agents.map((agent) => (
+                  <div key={agent.id} className="flex items-center justify-between p-3 bg-bg-secondary rounded-md">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-ink-primary">{agent.name}</span>
+                        <Badge color={agent.status === "online" ? "moss" : "gray"}>
+                          {agent.status === "online" ? "在线" : "离线"}
+                        </Badge>
+                        {agent.os && <span className="text-2xs text-ink-hint">{agent.os}</span>}
+                      </div>
+                      <p className="text-2xs text-ink-hint mt-0.5">
+                        {agent.hostname && `${agent.hostname} · `}
+                        {agent.version && `v${agent.version} · `}
+                        {agent.lastSeenAt && `最后在线: ${formatDate(agent.lastSeenAt, "MM-dd HH:mm")}`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Installation Guide */}
+          <Card>
+            <h3 className="text-sm font-medium text-ink-primary mb-3">Agent 安装指引</h3>
+            <div className="space-y-3 text-xs text-ink-secondary">
+              <div className="p-3 bg-bg-secondary rounded-md">
+                <p className="font-medium text-ink-primary mb-2">步骤1：安装Agent</p>
+                <p>在项目根目录下执行：</p>
+                <code className="block bg-white p-2 rounded mt-1 font-mono text-2xs">
+                  cd agent && npm install && npm run build && npm link
+                </code>
+              </div>
+              <div className="p-3 bg-bg-secondary rounded-md">
+                <p className="font-medium text-ink-primary mb-2">步骤2：配置API Key</p>
+                <code className="block bg-white p-2 rounded font-mono text-2xs">
+                  work-agent config set apiKey 你刚才生成的APIKey<br/>
+                  work-agent config set serverUrl ws://localhost:3001
+                </code>
+              </div>
+              <div className="p-3 bg-bg-secondary rounded-md">
+                <p className="font-medium text-ink-primary mb-2">步骤3：启动Agent</p>
+                <code className="block bg-white p-2 rounded font-mono text-2xs">
+                  work-agent start
+                </code>
+                <p className="mt-1 text-ink-hint">启动后页面会显示设备在线，CLI命令将会自动下发到本地执行</p>
+              </div>
             </div>
           </Card>
         </div>
