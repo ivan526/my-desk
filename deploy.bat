@@ -5,7 +5,7 @@ echo 工作成果管理台 - 局域网部署脚本
 echo ======================================
 echo.
 
-echo [1/6] 检查Node环境...
+echo [1/7] 检查Node环境...
 node -v >nul 2>&1
 if %errorlevel% neq 0 (
     echo 错误：未找到Node.js，请先安装Node.js 18+
@@ -16,7 +16,11 @@ echo Node.js版本：
 node -v
 echo.
 
-echo [2/6] 安装依赖...
+echo [2/6] 清理旧构建缓存...
+if exist ".next" rmdir /s /q ".next"
+echo 清理完成
+
+echo [3/6] 安装依赖...
 call npm install
 if %errorlevel% neq 0 (
     echo 依赖安装失败，请检查网络或npm配置
@@ -24,10 +28,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [3/6] 清理旧Prisma客户端...
+echo [4/6] 清理旧Prisma客户端...
 if exist "node_modules\.prisma" rmdir /s /q "node_modules\.prisma"
 
-echo [4/6] 生成Prisma客户端...
+echo [5/6] 生成Prisma客户端...
 call npx prisma generate
 if %errorlevel% neq 0 (
     echo 生成Prisma客户端失败
@@ -35,7 +39,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [5/6] 同步数据库结构...
+echo [6/6] 同步数据库结构...
 call npx prisma db push
 if %errorlevel% neq 0 (
     echo 数据库同步失败
@@ -43,7 +47,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [6/6] 构建生产版本...
+echo [7/7] 构建生产版本...
 call npm run build
 if %errorlevel% neq 0 (
     echo 构建失败，请检查代码错误
